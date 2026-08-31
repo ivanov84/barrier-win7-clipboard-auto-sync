@@ -675,11 +675,9 @@ Client::handleClipboardGrabbed(const Event& event, void*)
     m_sentClipboard[info->m_id] = false;
     m_timeClipboard[info->m_id] = 0;
 
-    // if we're not the active screen then send the clipboard now,
-    // otherwise we'll wait until we leave.
-    if (!m_active) {
-        sendClipboard(info->m_id);
-    }
+    // send clipboard immediately regardless of active state so that
+    // clipboard syncs even when the mouse stays on this screen
+    sendClipboard(info->m_id);
 }
 
 void

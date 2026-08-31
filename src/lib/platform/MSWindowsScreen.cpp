@@ -1473,14 +1473,19 @@ bool
 MSWindowsScreen::onClipboardChange()
 {
     // now notify client that somebody changed the clipboard (unless
-    // we're the owner).
+    // we're the owner).  report EVERY non-barrier change, not just
+    // the first one after gaining ownership, so that repeated copies
+    // and the very first copy after startup/connection are both
+    // detected and synced without any mouse movement.  barrier's own
+    // writes always carry the ownership format, so they never reach
+    // this branch and no feedback loop is possible.
     if (!MSWindowsClipboard::isOwnedByBarrier()) {
         if (m_ownClipboard) {
             LOG((CLOG_DEBUG "clipboard changed: lost ownership"));
-            m_ownClipboard = false;
-            sendClipboardEvent(m_events->forClipboard().clipboardGrabbed(), kClipboardClipboard);
-            sendClipboardEvent(m_events->forClipboard().clipboardGrabbed(), kClipboardSelection);
         }
+        m_ownClipboard = false;
+        sendClipboardEvent(m_events->forClipboard().clipboardGrabbed(), kClipboardClipboard);
+        sendClipboardEvent(m_events->forClipboard().clipboardGrabbed(), kClipboardSelection);
     }
     else if (!m_ownClipboard) {
         LOG((CLOG_DEBUG "clipboard changed: barrier owned"));

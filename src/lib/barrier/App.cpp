@@ -34,6 +34,7 @@
 
 #if SYSAPI_WIN32
 #include "base/IEventQueue.h"
+#include <Windows.h>
 #endif
 
 #include <iostream>
@@ -136,6 +137,35 @@ App::daemonMainLoop(int, const char**)
     return mainLoop();
 }
 
+#if SYSAPI_WIN32
+// create every missing parent directory of \c file (recursive mkdir -p).
+// CreateDirectoryA creates only a single level, so each prefix must be
+// created before its child -- walk the path top-down, from the drive root
+// to the deepest directory component (excluding the file name itself).
+static void createPathForFile(const char* file)
+{
+    std::string s(file);
+    // drop the trailing file name so s is the directory to create
+    size_t slash = s.find_last_of('\\');
+    if (slash != std::string::npos) {
+        s = s.substr(0, slash);
+    }
+    // skip past "C:\" (drive root already exists)
+    size_t pos = (s.size() > 2 && s[1] == ':') ? 3 : 0;
+    while (pos < s.size()) {
+        size_t next = s.find_first_of('\\', pos);
+        if (next == std::string::npos) {
+            next = s.size();
+        }
+        CreateDirectoryA(s.substr(0, next).c_str(), NULL); // fine if exists
+        if (next >= s.size()) {
+            break;
+        }
+        pos = next + 1;
+    }
+}
+#endif
+
 void
 App::setupFileLogging()
 {
@@ -144,6 +174,27 @@ App::setupFileLogging()
         CLOG->insert(m_fileLog);
         LOG((CLOG_DEBUG1 "logging to file (%s) enabled", argsBase().m_logFile));
     }
+#if SYSAPI_WIN32
+    else {
+        // no explicit -l given: still keep a complete, rolling log on
+        // disk at a known location.  the GUI only forwards a limited
+        // stdout buffer to its log window, so its "Show Log" shows little
+        // and stale data; with a full file log the complete current log is
+        // always available to copy and send for diagnostics.
+        char appData[MAX_PATH] = {0};
+        if (GetEnvironmentVariableA("APPDATA", appData, MAX_PATH) > 0) {
+            char logFile[MAX_PATH] = {0};
+            const std::string exe = argsBase().m_exename.empty()
+                    ? std::string("barrier") : argsBase().m_exename;
+            _snprintf(logFile, sizeof(logFile) - 1,
+                    "%s\\Barrier\\logs\\%s.log", appData, exe.c_str());
+            createPathForFile(logFile);
+            m_fileLog = new FileLogOutputter(logFile);
+            CLOG->insert(m_fileLog);
+            LOG((CLOG_DEBUG1 "logging to default file (%s) enabled", logFile));
+        }
+    }
+#endif
 }
 
 void

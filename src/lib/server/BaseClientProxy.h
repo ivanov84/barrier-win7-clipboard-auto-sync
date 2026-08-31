@@ -31,6 +31,16 @@ public:
     BaseClientProxy(const std::string& name);
     ~BaseClientProxy();
 
+    //! Update the last seen per-screen clipboard sequence number
+    /*!
+    The sequence number a screen reports is a per-screen generation
+    counter (a keyboard-focus generation on secondary screens), not a
+    global sequence, so it must only be compared against the last value
+    seen from the same screen.
+    */
+    bool    checkClipboardSeqNum(ClipboardID id, UInt32 seqNum) const;
+    void    setLastClipboardSeqNum(ClipboardID id, UInt32 seqNum);
+
     //! @name manipulators
     //@{
 
@@ -95,4 +105,7 @@ public:
 private:
     std::string m_name;
     SInt32                m_x, m_y;
+    // last per-screen clipboard sequence number seen from this proxy,
+    // per clipboard.  only comparable within this proxy.
+    UInt32                m_lastClipboardSeqNum[kClipboardEnd];
 };

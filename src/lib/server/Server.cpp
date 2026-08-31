@@ -1232,11 +1232,14 @@ Server::handleClipboardGrabbed(const Event& event, void* vclient)
 	const IScreen::ClipboardInfo* info =
 		static_cast<const IScreen::ClipboardInfo*>(event.getData());
 
-	// ignore grab if sequence number is old.  always allow primary
-	// screen to grab.
+	// ignore grab if sequence number is old.  the comparison must be
+	// against the last seqnum seen FROM THIS SAME SCREEN, because each
+	// screen's seqnum is a per-screen (keyboard-focus) generation that
+	// is not comparable across screens.  comparing against the shared
+	// per-clipboard value wrongly rejected legitimate client copies
+	// (the "missequenced" drops) whenever the primary had grabbed first.
 	ClipboardInfo& clipboard = m_clipboards[info->m_id];
-	if (grabber != m_primaryClient &&
-		info->m_sequenceNumber < clipboard.m_clipboardSeqNum) {
+	if (grabber->checkClipboardSeqNum(info->m_id, info->m_sequenceNumber)) {
 		LOG((CLOG_INFO "ignored screen \"%s\" grab of clipboard %d", getName(grabber).c_str(), info->m_id));
 		return;
 	}
@@ -1245,6 +1248,7 @@ Server::handleClipboardGrabbed(const Event& event, void* vclient)
 	LOG((CLOG_INFO "screen \"%s\" grabbed clipboard %d from \"%s\"", getName(grabber).c_str(), info->m_id, clipboard.m_clipboardOwner.c_str()));
 	clipboard.m_clipboardOwner  = getName(grabber);
 	clipboard.m_clipboardSeqNum = info->m_sequenceNumber;
+	grabber->setLastClipboardSeqNum(info->m_id, info->m_sequenceNumber);
 
 	// clear the clipboard data (since it's not known at this point)
 	if (clipboard.m_clipboard.open(0)) {
@@ -1264,6 +1268,13 @@ Server::handleClipboardGrabbed(const Event& event, void* vclient)
 		else {
 			client->grabClipboard(info->m_id);
 		}
+	}
+
+	// the local (primary) screen emits only a grab event, never a
+	// changed event, so read its clipboard and distribute to all the
+	// other screens immediately instead of waiting for a mouse move
+if (grabber == m_primaryClient) {
+		onClipboardChanged(grabber, info->m_id, info->m_sequenceNumber);
 	}
 }
 
@@ -1539,8 +1550,12 @@ Server::onClipboardChanged(BaseClientProxy* sender,
 {
 	ClipboardInfo& clipboard = m_clipboards[id];
 
-	// ignore update if sequence number is old
-	if (seqNum < clipboard.m_clipboardSeqNum) {
+	// ignore update if sequence number is old.  compare against the last
+	// seqnum seen FROM THIS SAME SCREEN (see checkClipboardSeqNum): the
+	// shared per-clipboard value is not comparable across screens and
+	// would wrongly drop a legitimate client update whenever the primary
+	// had grabbed first.
+	if (sender->checkClipboardSeqNum(id, seqNum)) {
 		LOG((CLOG_INFO "ignored screen \"%s\" update of clipboard %d (missequenced)", getName(sender).c_str(), id));
 		return;
 	}
@@ -1569,8 +1584,20 @@ Server::onClipboardChanged(BaseClientProxy* sender,
 		client->setClipboardDirty(id, client != sender);
 	}
 
-	// send the new clipboard to the active screen
-	m_active->setClipboard(id, &clipboard.m_clipboard);
+	// push the new clipboard to every other screen immediately, so the
+	// clipboard syncs as soon as it changes -- without waiting for the
+	// mouse to move to another screen.  the sender is skipped: it already
+	// has the data and its clipboard is clean, so sending to it would be
+	// a no-op.  detection of the next copy is handled by the screen
+	// itself (it now reports every non-barrier change), so no re-claim
+	// of ownership is needed here.
+	for (ClientList::const_iterator index = m_clients.begin();
+								index != m_clients.end(); ++index) {
+		BaseClientProxy* client = index->second;
+		if (client != sender) {
+			client->setClipboard(id, &clipboard.m_clipboard);
+		}
+	}
 }
 
 void
