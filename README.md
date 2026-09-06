@@ -1,148 +1,93 @@
-# Barrier
+# Barrier — Clipboard Auto-Sync fork
 
-Eliminate the barrier between your machines.
-Find [releases for windows and macOS here](https://github.com/debauchee/barrier/releases).
-Your distro probably already has barrier packaged for it, see [distro specific packages](#distro-specific-packages)
-below for a list. Alternatively, we also provide a [flatpak](https://github.com/flathub/com.github.debauchee.barrier)
-and a [snap](https://snapcraft.io/barrier).
+**Instant, two-way clipboard synchronization between your Windows machines —
+no mouse movement required.**
 
-### Contact info:
+[![Release](https://img.shields.io/badge/release-1.0.0-blue)](../../releases)
 
-- `#barrier` on LiberaChat IRC network
+This is a maintained fork of [debauchee/barrier](https://github.com/debauchee/barrier)
+(upstream is unmaintained since 2021). It focuses on one thing upstream never
+got right: the clipboard.
 
-#### CI Build Status
+## Why this fork exists
 
-Master branch overall build status: [![Build Status](https://dev.azure.com/debauchee/Barrier/_apis/build/status/debauchee.barrier?branchName=master)](https://dev.azure.com/debauchee/Barrier/_build/latest?definitionId=1&branchName=master)
+With upstream barrier, the clipboard only traveled between machines when you
+physically moved the mouse across screens. If you control the server over
+RDP/VNC and never see the second screen, you had to fall back to the remote
+client's own "send clipboard" menu — every single time.
 
-|Platform       |Build Status|
-|            --:|:--         |
-|Linux          |[![Build Status](https://dev.azure.com/debauchee/Barrier/_apis/build/status/debauchee.barrier?branchName=master&jobName=Linux%20Build)](https://dev.azure.com/debauchee/Barrier/_build/latest?definitionId=1&branchName=master)|
-|Mac            |[![Build Status](https://dev.azure.com/debauchee/Barrier/_apis/build/status/debauchee.barrier?branchName=master&jobName=Mac%20Build)](https://dev.azure.com/debauchee/Barrier/_build/latest?definitionId=1&branchName=master)|
-|Windows Debug  |[![Build Status](https://dev.azure.com/debauchee/Barrier/_apis/build/status/debauchee.barrier?branchName=master&jobName=Windows%20Build&configuration=Windows%20Build%20Debug)](https://dev.azure.com/debauchee/Barrier/_build/latest?definitionId=1&branchName=master)|
-|Windows Release|[![Build Status](https://dev.azure.com/debauchee/Barrier/_apis/build/status/debauchee.barrier?branchName=master&jobName=Windows%20Build&configuration=Windows%20Build%20Release%20with%20Release%20Installer)](https://dev.azure.com/debauchee/Barrier/_build/latest?definitionId=1&branchName=master)|
-|Snap           |[![Snap Status](https://build.snapcraft.io/badge/debauchee/barrier.svg)](https://build.snapcraft.io/user/debauchee/barrier)|
+This fork makes the clipboard **always synchronized**:
 
-Our CI Builds are provided by Microsoft Azure Pipelines, Flathub, and Canonical.
+* copy on the server → already on the laptop;
+* copy on the laptop → already on the server;
+* immediately, in the background, in both directions.
 
-### What is it?
+Works over any headless access (RDP, Radmin, VNC): the copy you make on the
+remote desktop arrives on your other machine without any interaction.
 
-Barrier is software that mimics the functionality of a KVM switch, which historically would allow you to use a single keyboard and mouse to control multiple computers by physically turning a dial on the box to switch the machine you're controlling at any given moment. Barrier does this in software, allowing you to tell it which machine to control by moving your mouse to the edge of the screen, or by using a keypress to switch focus to a different system.
+## What's changed vs upstream
 
-Barrier was forked from Symless's Synergy 1.9 codebase. Synergy was a commercialized reimplementation of the original CosmoSynergy written by Chris Schoeneman.
+1. **Clipboard sync is immediate and unconditional** (both directions):
+   `MSWindowsScreen` now reports every non-barrier clipboard change the moment
+   it happens, `Client` pushes its clipboard on every grab, and `Server`
+   broadcasts the new clipboard to every connected client right away — the
+   mouse-leave-only path is gone.
+2. **Fixed the long-standing missequenced/ignored clipboard bug**: the server
+   used one shared sequence number per clipboard while every screen has its
+   own; after the primary screen grabbed, legitimate client copies were
+   rejected as "missequenced" (the classic `ignored screen ... grab of
+   clipboard` log spam and intermittent lost copies). Sequence numbers are
+   now tracked **per screen** in `BaseClientProxy`.
+3. **Always-on full logging**: nodes write a complete rolling log to
+   `%APPDATA%\Barrier\logs\<exe>.log` even when launched without `-l`, so the
+   full history is always on disk for diagnostics (the GUI's "Show Log" only
+   holds a small stdout buffer).
+4. **`tools/barriertray`** — a tiny standalone tray helper (pure Win32, one
+   static exe, no Qt): an always-visible tray icon with a menu to copy the
+   entire current log to the clipboard in one click, open the log, open
+   barrier.conf, or restart the Barrier service. Re-adds its icon if explorer
+   restarts, and survives the Windows 10/11 hidden-overflow problem with a
+   retry loop.
+5. **Build**: MSVC 2022-compatible (C++17, `std::filesystem` instead of the
+   unmaintained `ghc::filesystem` polyfill), static CRT (`/MT`) so binaries
+   run on a bare machine with no VC++ redistributable. Verified working on
+   Windows 7 and Windows 11.
 
-At the moment, barrier is not compatible with synergy. Barrier needs to be installed on all machines that will share keyboard and mouse.
+## Getting the binaries
 
-### What's different?
+Grab the zip from [Releases](../../releases). Unpack, stop the Barrier
+service, copy the executables over your existing barrier install (usually
+`C:\Program Files\Barrier\`), start the service again — your existing
+`barrier.conf` and settings stay untouched.
 
-Whereas Synergy has moved beyond its goals from the 1.x era, Barrier aims to maintain that simplicity.
-Barrier will let you use your keyboard and mouse from one computer to control one or more other computers.
-Clipboard sharing is supported.
-That's it.
+Requirements: Windows 7/8/8.1/10/11 x64. The node binaries and the tray
+helper in this package are statically linked (no VC++ redistributable
+needed); barrier's GUI uses Qt and is unchanged from upstream.
 
-### Project goals
+## Building from source
 
-Hassle-free reliability. We are users, too. Barrier was created so that we could solve the issues we had with synergy and then share these fixes with other users.
+Same as upstream barrier (CMake), e.g. on Windows with VS 2022:
 
-Compatibility. We use more than one operating system and you probably do, too. Windows, OSX, Linux, FreeBSD... Barrier should "just work". We will also have our eye on Wayland when the time comes.
+```powershell
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target barriers barrierc barrierd
+```
 
-Communication. Everything we do is in the open. Our issue tracker will let you see if others are having the same problem you're having and will allow you to add additional information. You will also be able to see when progress is made and how the issue gets resolved.
+The tray helper builds standalone, see the comment at the top of
+`tools/barriertray/barriertray.cpp`.
 
-### Usage
+## Layout of this fork
 
-Install and run barrier on each machine that will be sharing.
-On the machine with the keyboard and mouse, make it the server.
+| Path | What it is |
+|------|-------------|
+| `src/lib/barrier/App.cpp` | always-on file logging |
+| `src/lib/client/Client.cpp` | immediate client→server clipboard push |
+| `src/lib/platform/MSWindowsScreen.cpp` | un-gated clipboard change detection |
+| `src/lib/server/BaseClientProxy.{h,cpp}` | per-screen clipboard sequence numbers |
+| `src/lib/server/Server.cpp` | immediate broadcast to all clients |
+| `tools/barriertray/` | standalone tray helper (source + icon) |
 
-Click the "Configure server" button and drag a new screen onto the grid for each client machine.
-Ensure the "screen name" matches exactly (case-sensitive) for each configured screen -- the clients' barrier windows will tell you their screen names (just above the server IP).
+## Credits
 
-On the client(s), put in the server machine's IP address (or use Bonjour/auto configuration when prompted) and "start" them.
-You should see `Barrier is running` on both server and clients.
-You should now be able to move the mouse between all the screens as if they were the same machine.
-
-Note that if the keyboard's Scroll Lock is active then this will prevent the mouse from switching screens.
-
-### Contact & support
-
-Please be aware that the *only* way to draw our attention to a bug is to create a new issue in [the issue tracker](https://github.com/debauchee/barrier/issues). Write a clear, concise, detailed report and you will get a clear, concise, detailed response. Priority is always given to issues that affect a wider range of users.
-
-For short and simple questions or to just say hello find us on the LiberaChat IRC network in the #barrier channel.
-
-### Contributions
-
-At this time we are looking for developers to help fix the issues found in the issue tracker.
-Submit pull requests once you've polished up your patch and we'll review and possibly merge it.
-
-Most pull requests will need to include a release note.
-See docs/newsfragments/README.md for documentation of how to do that.
-
-## Distro specific packages
-
-While not a comprehensive list, repology provides a decent list of distro
-specific packages.
-
-[![Packaging status](https://repology.org/badge/vertical-allrepos/barrier.svg)](https://repology.org/project/barrier/versions)
-
-## FAQ - Frequently Asked Questions
-
-**Q: Does drag and drop work on linux?**
-
-> A: No *(see [#855](https://github.com/debauchee/barrier/issues/855) if you'd like to change that)*
-
-
-**Q: What OSes are supported?**
-
-> A: The [most recent release](https://github.com/debauchee/barrier/releases/latest) of Barrier is known to work on:
->  - Windows 7, 8, 8.1, 10, and 11
->  - macOS *(previously known as OS X or Mac OS X)*  
->    - _The current GUI does **not** work on OS versions prior to macOS 10.12 Sierra (but see the related answer below)_
->  - Linux
->  - FreeBSD
->  - OpenBSD
-
-
-**Q: Are 32-bit versions of Windows supported?**
-
-> A: No
-
-
-__Q: Is it possible to use Barrier on Mac OS X / OS X versions prior to 10.12?__
-
-> A: Not officially.
->   - For OS X 10.10 Yosemite and later:
->     - [Barrier v2.1.0](https://github.com/debauchee/barrier/releases/tag/v2.1.0) or earlier _may_ work.
->   - For Mac OS X 10.9 Mavericks _(and perhaps earlier)_:
->     1. the command-line portions of the [current release](https://github.com/debauchee/barrier/releases/latest) _should_ run fine.
->     2. The GUI will _not_ run, as that OS version does not include Apple's *Metal* framework.
->         - _(For a GUI workaround for Mac OS X 10.9, see the [discussion at issue #544](https://github.com/debauchee/barrier/issues/544))_
-
-> Note: Only versions [v2.3.4](https://github.com/debauchee/barrier/releases/tag/v2.3.4) and [later](https://github.com/debauchee/barrier/releases/latest) of Barrier can be supported by this project.
->  - Anyone using an earlier version is advised to upgrade due to recently-addressed security vulnerabilities *(and other bug fixes)*. 
->    - This is especially important for computers accessible from the public Internet *(or from other shared/untrusted networks, such as when using shared WiFi)*.
-
-
-**Q: How do I load my configuration on startup?**
-
-> A: Start the binary with the argument `--config <path_to_saved_configuration>`
-
-
-**Q: After loading my configuration on the client the field 'Server IP' is still empty!**
-
-> A: Edit your configuration to include the server's ip address manually with
-> 
->```
->(...)
->
->section: options
->    serverhostname=<AAA.BBB.CCC.DDD>
->```
-
-**Q: Are there any other significant limitations with the current version of Barrier?**
-
-> A: Currently:
->    - Barrier currently has limited UTF-8 support; issues have been reported with processing various languages.
->      - *(see [#860](https://github.com/debauchee/barrier/issues/860))*
->    - There is interest in future support for the Wayland compositor/display server protocol *([official site](https://wayland.freedesktop.org/) | [Wikipedia article](https://en.wikipedia.org/wiki/Wayland_(display_server_protocol)))* on Linux.
->      - As of late 2021, there is no expected completion date for *Wayland* support.
->      - *(see [#109](https://github.com/debauchee/barrier/issues/109) and [#1251](https://github.com/debauchee/barrier/issues/1251) for status or to volunteer your talents)*
->
-> The complete list of open issues can be found in the ['Issues' tab on GitHub](https://github.com/debauchee/barrier/issues?q=is%3Aissue+is%3Aopen). Help is always appreciated.
+Based on [barrier](https://github.com/debauchee/barrier) by Debauchee
+(originally from Synergy by Chris Schoeneman). See LICENSE (GPLv2).

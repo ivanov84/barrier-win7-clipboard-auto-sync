@@ -37,3 +37,4 @@ CMakeCache.txt
 tools/barriertray/*.exe
 tools/barriertray/*.obj
 tools/barriertray/RCa*
+tools/barriertray/*.res
