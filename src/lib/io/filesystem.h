@@ -19,13 +19,13 @@
 #define BARRIER_LIB_IO_FILESYSTEM_H
 
 #include <cstdio>
+#include <filesystem>
 #include <iosfwd>
 #include <ios>
-#include <ghc/fs_fwd.hpp>
 
 namespace barrier {
 
-namespace fs = ghc::filesystem;
+namespace fs = std::filesystem;
 
 void open_utf8_path(std::ifstream& stream, const fs::path& path,
                     std::ios_base::openmode mode = std::ios_base::in);
