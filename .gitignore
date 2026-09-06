@@ -32,3 +32,8 @@ CMakeCache.txt
 # Transient in-project-directory dependencies
 /deps/
 /out/build/x64-Debug
+
+# barriertray build artifacts
+tools/barriertray/*.exe
+tools/barriertray/*.obj
+tools/barriertray/RCa*
