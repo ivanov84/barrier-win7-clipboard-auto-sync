@@ -17,9 +17,15 @@
 //   cl /EHsc /O2 /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN /MT /W3 barriertray.cpp
 //   link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
 
+#ifndef UNICODE
 #define UNICODE
+#endif
+#ifndef _UNICODE
 #define _UNICODE
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
